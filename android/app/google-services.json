@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "162551340752",
+    "firebase_url": "https://dumb-charades-a1d05.firebaseio.com",
+    "project_id": "dumb-charades-a1d05",
+    "storage_bucket": "dumb-charades-a1d05.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:162551340752:android:7f31ca10fa3543837dc8d5",
+        "android_client_info": {
+          "package_name": "com.script.dumbCharades"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "162551340752-r7e6rc5btmkr4vhl7fhll2anoj7mg2i2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.script.dumbCharades",
+            "certificate_hash": "dbfaeff57738ae44d9d3310513f3802a55640153"
+          }
+        },
+        {
+          "client_id": "162551340752-0cau9a298civgmoer2ibplpahu2ageoc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBCCj21Lq9n0sqWRekhOHIj1NzHu3BDhJA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "162551340752-0cau9a298civgmoer2ibplpahu2ageoc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
