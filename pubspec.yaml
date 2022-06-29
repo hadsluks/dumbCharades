@@ -37,6 +37,10 @@ dependencies:
   flutter_image_compress: ^0.6.7
   http: ^0.12.1
   permission_handler: ^5.0.0+hotfix.5
+  camera: ^0.5.8+2
+  open_file: ^3.0.1
+  screenshot: ^0.2.0
+
 
 
   # The following adds the Cupertino Icons font to your application.

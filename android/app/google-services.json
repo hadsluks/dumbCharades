@@ -15,10 +15,63 @@
       },
       "oauth_client": [
         {
+          "client_id": "162551340752-l1qqhchto08og0klu422ospsvetcpvsd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.script.dumbCharades",
+            "certificate_hash": "1e03d5014f71c747d4f8bc12eda9f03ebccbe0a0"
+          }
+        },
+        {
           "client_id": "162551340752-r7e6rc5btmkr4vhl7fhll2anoj7mg2i2.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.script.dumbCharades",
+            "certificate_hash": "dbfaeff57738ae44d9d3310513f3802a55640153"
+          }
+        },
+        {
+          "client_id": "162551340752-0cau9a298civgmoer2ibplpahu2ageoc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBCCj21Lq9n0sqWRekhOHIj1NzHu3BDhJA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "162551340752-0cau9a298civgmoer2ibplpahu2ageoc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:162551340752:android:ffd4df20c60113717dc8d5",
+        "android_client_info": {
+          "package_name": "com.script.scriptGames"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "162551340752-g5a2amc4jbqa57lhus0v8ab1vl85p0c4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.script.scriptGames",
+            "certificate_hash": "1e03d5014f71c747d4f8bc12eda9f03ebccbe0a0"
+          }
+        },
+        {
+          "client_id": "162551340752-9gfpr4cccfmpaj8eb4fjjkg4dsgqvuav.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.script.scriptGames",
             "certificate_hash": "dbfaeff57738ae44d9d3310513f3802a55640153"
           }
         },

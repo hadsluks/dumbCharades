@@ -4,12 +4,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dumbCharades/classes.dart';
 import 'package:dumbCharades/gameWaitingPage.dart';
 import 'package:dumbCharades/roomPage.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:dumbCharades/appDrawer.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -24,6 +23,7 @@ class _HomePageState extends State<HomePage> {
   StreamSubscription roomSub;
   List<StreamSubscription> roomSubs;
   bool isInGame = false;
+  GlobalKey<ScaffoldState> _scaffoldKey = new GlobalKey<ScaffoldState>();
 
   void getProfilePics() async {
     Firestore firestore = Firestore.instance;
@@ -51,7 +51,7 @@ class _HomePageState extends State<HomePage> {
         .snapshots()
         .listen((sp) {
       sp.documents.forEach((doc) {
-        addRoom(new Room.fromMap(doc.data));
+        addRoom(new Room.fromMap(doc.data, doc.reference));
       });
       setState(() {});
     });
@@ -74,27 +74,44 @@ class _HomePageState extends State<HomePage> {
       var d = doc.data;
       String type = d['type'].toString(), created = d['created'].toString();
       DateTime dt;
-      if (created != null) dt = DateTime.parse(created);
-      if (DateTime.now().difference(dt).inMinutes <= 5 &&
-          type != null &&
-          type == "request" &&
-          !isInGame) {
-        var players = List<String>.generate(
-          d['players'].length,
-          (i) => d['players'][i].toString(),
-        );
-        String hostName = d['hostName'],
-            hostNumber = d['hostNumber'],
-            gameType = d['gameType'];
-        if (players.contains(me.number) && hostNumber != me.number)
-          roomRequestDialog(
-              d['id'].toString(), players, hostName,hostNumber, gameType, doc.reference);
+      String id = doc.reference.parent().id.substring(4);
+      if (type == "games") {
+        if (myRooms.any((r) => r.id == id)) {
+          myRooms.firstWhere((r) => r.id == id).gamesRef = doc.reference;
+        }
+      } else {
+        if (created != null) dt = DateTime.parse(created);
+        if (DateTime.now().difference(dt).inMinutes <= 5 &&
+            type != null &&
+            type == "request" &&
+            !isInGame) {
+          var players = List<String>.generate(
+            d['players'].length,
+            (i) => d['players'][i].toString(),
+          );
+          String hostName = d['hostName'],
+              hostNumber = d['hostNumber'],
+              gameType = d['gameType'];
+          DocumentReference gamesRef;
+          if (myRooms.any((r) => r.id == id)) {
+            gamesRef = myRooms.firstWhere((r) => r.id == id).gamesRef;
+          }
+          if (players.contains(me.number) && hostNumber != me.number)
+            roomRequestDialog(d['id'].toString(), players, hostName, hostNumber,
+                gameType, doc.reference, gamesRef);
+        }
       }
     });
   }
 
-  void roomRequestDialog(String gameId, List<String> playerNumbers,
-      String hostName,String hostNumber, String gameType, DocumentReference reqRef) {
+  void roomRequestDialog(
+      String gameId,
+      List<String> playerNumbers,
+      String hostName,
+      String hostNumber,
+      String gameType,
+      DocumentReference reqRef,
+      DocumentReference gamesRef) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -197,11 +214,17 @@ class _HomePageState extends State<HomePage> {
                           MaterialPageRoute(
                             builder: (context) => GameWaitingPage(
                               gameId: gameId,
+                              gameCol: gamesRef != null
+                                  ? gamesRef.collection(gameId)
+                                  : null,
+                              gameType: gameType == "Dumb Charades"
+                                  ? GameType.DumbCharades
+                                  : GameType.TruthOrDare,
                               profilePics: profilePics,
                               me: me,
                               allPlayersNumber: playerNumbers,
                               reqRef: reqRef,
-                              isAdmin: hostNumber==me.number,
+                              isAdmin: hostNumber == me.number,
                             ),
                           ),
                         );
@@ -281,9 +304,9 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    super.dispose();
     roomSub.cancel();
     roomSubs.forEach((s) => s.cancel());
+    super.dispose();
   }
 
   @override
@@ -291,6 +314,7 @@ class _HomePageState extends State<HomePage> {
     var size = MediaQuery.of(context).size;
     return SafeArea(
       child: Scaffold(
+        key: _scaffoldKey,
         backgroundColor: Colors.white,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
@@ -333,7 +357,9 @@ class _HomePageState extends State<HomePage> {
           ),
           actions: [
             GestureDetector(
-              onTap: () {},
+              onTap: () {
+                _scaffoldKey.currentState.openEndDrawer();
+              },
               child: Container(
                 width: 54,
                 margin: EdgeInsets.symmetric(vertical: 8),
@@ -378,9 +404,19 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         bottomNavigationBar: Container(
-          color: Colors.transparent,
           height: size.width / 3,
           width: size.width,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                offset: Offset(0, 5),
+                blurRadius: 15,
+                color: Colors.grey[300],
+                spreadRadius: 5,
+              )
+            ],
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
@@ -411,6 +447,7 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
+        endDrawer: MyDrawer(me, _scaffoldKey),
         body: Column(
           children: [
             Expanded(
@@ -519,6 +556,7 @@ class _HomePageState extends State<HomePage> {
             Expanded(
               flex: 3,
               child: ListView.builder(
+                physics: BouncingScrollPhysics(),
                 itemBuilder: (context, i) {
                   if (myRooms.length == 0)
                     return Text(
@@ -563,21 +601,49 @@ class _HomePageState extends State<HomePage> {
                             EdgeInsets.symmetric(vertical: 5, horizontal: 15),
                         child: Row(
                           children: [
-                            Text(
-                              r.name,
-                              style: TextStyle(
-                                fontSize: 25,
-                                foreground: Paint()
-                                  ..shader = LinearGradient(
-                                    colors: [
-                                      Color(0xfffd3e40),
-                                      Color(0xff960e7a),
-                                    ],
-                                  ).createShader(
-                                    Rect.fromLTWH(0.0, 0.0, 200.0, 70.0),
-                                  ),
+                            Expanded(
+                              flex: 3,
+                              child: Text(
+                                r.name,
+                                style: TextStyle(
+                                  fontSize: 25,
+                                  foreground: Paint()
+                                    ..shader = LinearGradient(
+                                      colors: [
+                                        Color(0xfffd3e40),
+                                        Color(0xff960e7a),
+                                      ],
+                                    ).createShader(
+                                      Rect.fromLTWH(0.0, 0.0, 200.0, 70.0),
+                                    ),
+                                ),
                               ),
                             ),
+                            r.adminNumber == me.number
+                                ? Align(
+                                    alignment: Alignment.bottomRight,
+                                    child: Text(
+                                      "Admin",
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  )
+                                : IconButton(
+                                    icon: Icon(
+                                      Icons.delete_outline,
+                                      color: Colors.redAccent,
+                                    ),
+                                    onPressed: () async {
+                                      r.players.remove(me.number);
+                                      await r.ref
+                                          .updateData({"players": r.players});
+                                      setState(() {
+                                        myRooms.removeAt(i);
+                                      });
+                                    },
+                                  ),
                           ],
                         ),
                       ),
@@ -772,68 +838,141 @@ class _HomePageState extends State<HomePage> {
 
     showDialog(
       context: context,
+      barrierDismissible: true,
       builder: (context) {
         String name = "";
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          backgroundColor: Color(0xffeec32d),
-          content: TextField(
-            decoration: InputDecoration(
-              hintText: "Room Name",
-            ),
-            onChanged: (s) {
-              name = s;
-            },
-          ),
-          actions: [
-            FlatButton(
-              onPressed: () async {
-                if (name.length == 0) {
-                  toast("Add a name", Toast.LENGTH_SHORT);
-                } else {
-                  var ids = generateId(10);
-                  loadingDialog();
-                  var sp = await Firestore.instance
-                      .collection('rooms')
-                      .getDocuments();
-                  List<String> regIds = sp.documents
-                      .map<String>((e) => e.data['id'].toString())
-                      .toList();
-                  ids.removeWhere((i) {
-                    return regIds.contains(i);
-                  });
-                  while (ids.length == 0) {
-                    ids = generateId(10);
-                    ids.removeWhere((i) {
-                      return regIds.contains(i);
-                    });
-                  }
-                  String id = ids[0];
-                  await Firestore.instance
-                      .collection('rooms')
-                      .document()
-                      .setData({
-                    'adminNumber': me.number,
-                    'adminName': me.name,
-                    'name': name,
-                    'id': id,
-                    'players': [me.number],
-                  });
-                  Navigator.pop(context);
-                  Navigator.pop(context);
-                }
-              },
-              child: Text(
-                "CREATE",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
+        TextEditingController con = new TextEditingController(text: "");
+        return Dialog(
+          child: Container(
+            height: 200,
+            width: MediaQuery.of(context).size.width - 50,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              gradient: LinearGradient(
+                colors: [Color(0xfffec183), Color(0xffff1572)],
               ),
-            )
-          ],
+            ),
+            padding: EdgeInsets.all(10),
+            child: Column(
+              children: [
+                SizedBox(height: 10),
+                Text(
+                  "Enter Room Name",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(height: 20),
+                Form(
+                  child: Container(
+                    height: 80,
+                    width: 200,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white, width: 3.0),
+                    ),
+                    padding:
+                        EdgeInsets.only(left: 5, right: 5, bottom: 6, top: 2),
+                    child: TextField(
+                      onChanged: (s) {
+                        name = s;
+                      },
+                      autofocus: true,
+                      cursorColor: Colors.white,
+                      style: TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 25),
+                        counterText: "",
+                        border: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white),
+                        ),
+                        disabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white),
+                        ),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white),
+                        ),
+                        errorBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white),
+                        ),
+                        focusedErrorBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Spacer(),
+                GestureDetector(
+                  onTap: () async {
+                    if (name.length == 0) {
+                      toast("Add a name", Toast.LENGTH_SHORT);
+                    } else {
+                      var ids = generateId(10);
+                      loadingDialog();
+                      var sp = await Firestore.instance
+                          .collection('rooms')
+                          .getDocuments();
+                      List<String> regIds = sp.documents
+                          .map<String>((e) => e.data['id'].toString())
+                          .toList();
+                      ids.removeWhere((i) {
+                        return regIds.contains(i);
+                      });
+                      while (ids.length == 0) {
+                        ids = generateId(10);
+                        ids.removeWhere((i) {
+                          return regIds.contains(i);
+                        });
+                      }
+                      String id = ids[0];
+                      await Firestore.instance
+                          .collection('rooms')
+                          .document()
+                          .setData({
+                        'adminNumber': me.number,
+                        'adminName': me.name,
+                        'name': name,
+                        'id': id,
+                        'players': [me.number],
+                      });
+                      Navigator.pop(context);
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: Container(
+                    width: 100,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(15),
+                      color: Colors.white,
+                    ),
+                    child: Text(
+                      "Create",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
+                        foreground: Paint()
+                          ..shader = LinearGradient(
+                            colors: [Color(0xfffec183), Color(0xffff1572)],
+                          ).createShader(
+                            Rect.fromLTWH(0.0, 0.0, 100, 40),
+                          ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
         );
       },
     );

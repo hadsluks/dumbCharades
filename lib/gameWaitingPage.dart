@@ -5,11 +5,15 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dumbCharades/classes.dart';
 import 'package:dumbCharades/dumbCharadesGame.dart';
+import 'package:dumbCharades/roomPage.dart';
+import 'package:dumbCharades/truthOrDareGame.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
 class GameWaitingPage extends StatefulWidget {
   final String gameId;
+  CollectionReference gameCol;
+  final GameType gameType;
   final List<ProfilePicData> profilePics;
   final List<String> allPlayersNumber;
   final User me;
@@ -17,12 +21,14 @@ class GameWaitingPage extends StatefulWidget {
   final DocumentReference reqRef;
   final bool isAdmin;
   GameWaitingPage({
+    @required this.gameCol,
     @required this.gameId,
+    @required this.gameType,
     @required this.profilePics,
     @required this.me,
     this.allPlayers,
     this.allPlayersNumber,
-    this.reqRef,
+    @required this.reqRef,
     @required this.isAdmin,
   });
   @override
@@ -36,7 +42,6 @@ class _GameWaitingPageState extends State<GameWaitingPage>
   final List<ProfilePicData> profilePics;
   final User me;
   List<User> playersJoined, playersWaiting;
-  List<User> teamA, teamB;
   List<Message> messages;
   _GameWaitingPageState(
       {@required this.profilePics,
@@ -54,10 +59,7 @@ class _GameWaitingPageState extends State<GameWaitingPage>
   int tabIndex = 0;
 
   void subscribeGameCollection() {
-    gameSubs = Firestore.instance
-        .collection(widget.gameId)
-        .snapshots()
-        .listen(spRecieved);
+    gameSubs = widget.gameCol.snapshots().listen(spRecieved);
   }
 
   void spRecieved(QuerySnapshot sp) {
@@ -68,22 +70,6 @@ class _GameWaitingPageState extends State<GameWaitingPage>
         DateTime st = DateTime.parse(d['startTime']);
         startSecRem = st.difference(DateTime.now()).inSeconds;
         startGameTimer();
-      } else if (d['type'] == "teamA") {
-        List<String> players =
-            List<String>.generate(d['players'].length, (i) => d['players'][i]);
-        teamA = new List();
-        for (var number in players) {
-          var user = allPlayers.firstWhere((pl) => pl.number == number);
-          if (!teamA.any((pl) => pl.number == number)) teamA.add(user);
-        }
-      } else if (d['type'] == "teamB") {
-        List<String> players =
-            List<String>.generate(d['players'].length, (i) => d['players'][i]);
-        teamB = new List();
-        for (var number in players) {
-          var user = allPlayers.firstWhere((pl) => pl.number == number);
-          if (!teamB.any((pl) => pl.number == number)) teamB.add(user);
-        }
       } else if (d['type'] == "isAdmin" &&
           d['number'].toString() == me.number) {
         isAdmin = true;
@@ -136,26 +122,32 @@ class _GameWaitingPageState extends State<GameWaitingPage>
 
   void stopGameTimer() {
     startTimer.cancel();
-    int myVideoId;
-    if (teamA.any((pl) => pl.number == me.number)) {
-      myVideoId = 100 + teamA.indexWhere((pl) => pl.number == me.number);
-    } else if (teamB.any((pl) => pl.number == me.number)) {
-      myVideoId = 200 + teamB.indexWhere((pl) => pl.number == me.number);
-    }
     Navigator.of(context).pop();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => DumbCharadesGame(
-          myVideoId: myVideoId,
-          teamA: teamA,
-          teamB: teamB,
-          isAdmin: widget.isAdmin,
-          gameId: widget.gameId,
-          me: me,
-          denRef: denRef,
+    if (widget.gameType == GameType.DumbCharades)
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => DumbCharadesGame(
+            isAdmin: widget.isAdmin,
+            gameCol: widget.gameCol,
+            gameId: widget.gameId,
+            me: me,
+            players: playersJoined,
+            denRef: denRef,
+          ),
         ),
-      ),
-    );
+      );
+    else if (widget.gameType == GameType.TruthOrDare)
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => TruthOrDareGame(
+            isAdmin: widget.isAdmin,
+            gameCol: widget.gameCol,
+            //gameId: widget.gameId,
+            me: me,
+            allPlayers: playersJoined,
+          ),
+        ),
+      );
   }
 
   void getAllPlayers() async {
@@ -163,6 +155,24 @@ class _GameWaitingPageState extends State<GameWaitingPage>
     widget.allPlayersNumber.forEach((pl) {
       var d = sp.documents.firstWhere((doc) => doc.data['number'] == pl).data;
       allPlayers.add(new User.fromMap(d, profilePics));
+    });
+    if (widget.gameCol == null) {
+      getGameCollection();
+    } else {
+      subscribeGameCollection();
+    }
+  }
+
+  void getGameCollection() async {
+    var sp = await widget.reqRef
+        .parent()
+        .where("type", isEqualTo: "games")
+        .getDocuments();
+    sp.documents.forEach((doc) {
+      var d = doc.data;
+      if (d['type'] == "games") {
+        widget.gameCol = doc.reference.collection(widget.gameId);
+      }
     });
     subscribeGameCollection();
   }
@@ -185,8 +195,6 @@ class _GameWaitingPageState extends State<GameWaitingPage>
     messFocus = new FocusNode();
     playersJoined = new List();
     playersWaiting = new List();
-    teamA = new List();
-    teamB = new List();
     cont = new TabController(length: 2, vsync: this);
     cont.addListener(() {
       setState(() {
@@ -197,6 +205,8 @@ class _GameWaitingPageState extends State<GameWaitingPage>
     if (allPlayers == null) {
       allPlayers = new List();
       getAllPlayers();
+    } else if (widget.gameCol == null) {
+      getGameCollection();
     } else {
       subscribeGameCollection();
     }
@@ -284,8 +294,7 @@ class _GameWaitingPageState extends State<GameWaitingPage>
   }
 
   void exitGame() async {
-    Firestore.instance
-        .collection(widget.gameId)
+    widget.gameCol
         .where('number', isEqualTo: me.number)
         .getDocuments()
         .then((sp) {
@@ -331,11 +340,11 @@ class _GameWaitingPageState extends State<GameWaitingPage>
                       children: [
                         GestureDetector(
                           onTap: () {
-                            if (playersJoined.length >= 4) {
+                            if (playersJoined.length >= 1) {
                               startGame();
                             } else {
                               toast(
-                                  "Atleast 4 players are needed to start a game",
+                                  "Atleast 2 players are needed to start a game",
                                   Toast.LENGTH_LONG);
                             }
                           },
@@ -453,247 +462,106 @@ class _GameWaitingPageState extends State<GameWaitingPage>
                               SizedBox(
                                 height: 10,
                               ),
+                              Text(
+                                startSecRem.toString(),
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                               Container(
-                                height: 250,
-                                padding: EdgeInsets.symmetric(horizontal: 10),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: ListView.builder(
-                                        scrollDirection: Axis.vertical,
-                                        itemCount: teamA.length + 1,
-                                        itemBuilder: (context, i) {
-                                          if (i == 0)
-                                            return Container(
-                                              padding: EdgeInsets.symmetric(
-                                                  vertical: 5),
-                                              child: Text(
-                                                "TEAM A",
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                  decoration:
-                                                      TextDecoration.underline,
-                                                ),
-                                              ),
-                                            );
-                                          User p = teamA[i - 1];
-                                          return Column(
-                                            children: [
-                                              Stack(
-                                                children: [
-                                                  Container(
-                                                    height: 80,
-                                                    width: 80,
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.white,
-                                                      shape: BoxShape.circle,
-                                                      border: Border.all(
-                                                          color:
-                                                              Colors.green[300],
-                                                          width: 3),
-                                                    ),
-                                                    padding: EdgeInsets.all(5),
-                                                    margin:
-                                                        EdgeInsets.symmetric(
-                                                            horizontal: 10),
-                                                    child: playersJoined != null
-                                                        ? ClipRRect(
-                                                            borderRadius:
-                                                                BorderRadius
-                                                                    .circular(
-                                                                        50),
-                                                            child:
-                                                                CachedNetworkImage(
-                                                              imageUrl: p
-                                                                  .profilePic
-                                                                  .link,
-                                                              fit: BoxFit.cover,
-                                                              placeholder:
-                                                                  (context,
-                                                                          url) =>
-                                                                      Center(
-                                                                child:
-                                                                    CircularProgressIndicator(),
-                                                              ),
-                                                            ),
-                                                          )
-                                                        : Center(
-                                                            child:
-                                                                CircularProgressIndicator(),
-                                                          ),
-                                                  ),
-                                                  Positioned(
-                                                    right: 5,
-                                                    top: 5,
-                                                    child: Container(
-                                                      height: 20,
-                                                      width: 20,
-                                                      decoration: BoxDecoration(
-                                                        shape: BoxShape.circle,
-                                                        color: Colors.green,
-                                                      ),
-                                                      child: Center(
-                                                        child: Icon(
-                                                          Icons.check,
-                                                          color: Colors.white,
-                                                          size: 15,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              SizedBox(
-                                                height: 15,
-                                              ),
-                                              playersJoined != null
-                                                  ? Text(
-                                                      p.name,
-                                                      style: TextStyle(
-                                                          color: Colors.white),
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    )
-                                                  : SizedBox(),
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                    Container(
-                                      child: Column(
+                                height: size.height * 0.4,
+                                child: GridView.count(
+                                  crossAxisCount: 3,
+                                  scrollDirection: Axis.vertical,
+                                  physics: BouncingScrollPhysics(),
+                                  children: List<Widget>.generate(
+                                      playersJoined.length, (i) {
+                                    User p = playersJoined != null &&
+                                            playersJoined.length > i
+                                        ? playersJoined[i]
+                                        : null;
+                                    if (p == null)
+                                      return SizedBox(height: 80, width: 80);
+                                    else
+                                      return Column(
                                         children: [
-                                          Expanded(
-                                            child: VerticalDivider(
-                                              thickness: 2,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                          Text(
-                                            startSecRem.toString(),
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          Expanded(
-                                              child: VerticalDivider(
-                                            thickness: 2,
-                                            color: Colors.white,
-                                          )),
-                                        ],
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: ListView.builder(
-                                        scrollDirection: Axis.vertical,
-                                        itemCount: teamB.length + 1,
-                                        itemBuilder: (context, i) {
-                                          if (i == 0)
-                                            return Container(
-                                              padding: EdgeInsets.symmetric(
-                                                  vertical: 5),
-                                              child: Text(
-                                                "TEAM B",
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                  decoration:
-                                                      TextDecoration.underline,
-                                                ),
-                                              ),
-                                            );
-                                          User p = teamB[i - 1];
-                                          return Column(
+                                          Stack(
                                             children: [
-                                              Stack(
-                                                children: [
-                                                  Container(
-                                                    height: 80,
-                                                    width: 80,
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.white,
-                                                      shape: BoxShape.circle,
-                                                      border: Border.all(
-                                                          color:
-                                                              Colors.green[300],
-                                                          width: 3),
-                                                    ),
-                                                    padding: EdgeInsets.all(5),
-                                                    margin:
-                                                        EdgeInsets.symmetric(
-                                                            horizontal: 10),
-                                                    child: playersJoined != null
-                                                        ? ClipRRect(
-                                                            borderRadius:
-                                                                BorderRadius
-                                                                    .circular(
-                                                                        50),
-                                                            child:
-                                                                CachedNetworkImage(
-                                                              imageUrl: p
-                                                                  .profilePic
-                                                                  .link,
-                                                              fit: BoxFit.cover,
-                                                              placeholder:
-                                                                  (context,
-                                                                          url) =>
-                                                                      Center(
-                                                                child:
-                                                                    CircularProgressIndicator(),
-                                                              ),
-                                                            ),
-                                                          )
-                                                        : Center(
+                                              Container(
+                                                height: 80,
+                                                width: 80,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                      color: Colors.green[300],
+                                                      width: 3),
+                                                ),
+                                                padding: EdgeInsets.all(5),
+                                                margin: EdgeInsets.symmetric(
+                                                    horizontal: 10),
+                                                child: playersJoined != null
+                                                    ? ClipRRect(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(50),
+                                                        child:
+                                                            CachedNetworkImage(
+                                                          imageUrl: p.profilePic
+                                                                  .link ??
+                                                              defaultProfilePicLink,
+                                                          fit: BoxFit.cover,
+                                                          placeholder:
+                                                              (context, url) =>
+                                                                  Center(
                                                             child:
                                                                 CircularProgressIndicator(),
                                                           ),
-                                                  ),
-                                                  Positioned(
-                                                    right: 5,
-                                                    top: 5,
-                                                    child: Container(
-                                                      height: 20,
-                                                      width: 20,
-                                                      decoration: BoxDecoration(
-                                                        shape: BoxShape.circle,
-                                                        color: Colors.green,
-                                                      ),
-                                                      child: Center(
-                                                        child: Icon(
-                                                          Icons.check,
-                                                          color: Colors.white,
-                                                          size: 15,
                                                         ),
+                                                      )
+                                                    : Center(
+                                                        child:
+                                                            CircularProgressIndicator(),
                                                       ),
+                                              ),
+                                              Positioned(
+                                                right: 5,
+                                                top: 5,
+                                                child: Container(
+                                                  height: 20,
+                                                  width: 20,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: Colors.green,
+                                                  ),
+                                                  child: Center(
+                                                    child: Icon(
+                                                      Icons.check,
+                                                      color: Colors.white,
+                                                      size: 15,
                                                     ),
-                                                  )
-                                                ],
-                                              ),
-                                              SizedBox(
-                                                height: 15,
-                                              ),
-                                              playersJoined != null
-                                                  ? Text(
-                                                      p.name,
-                                                      style: TextStyle(
-                                                          color: Colors.white),
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    )
-                                                  : SizedBox(),
+                                                  ),
+                                                ),
+                                              )
                                             ],
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ],
+                                          ),
+                                          SizedBox(
+                                            height: 15,
+                                          ),
+                                          playersJoined != null
+                                              ? Text(
+                                                  p.name,
+                                                  style: TextStyle(
+                                                      color: Colors.white),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                )
+                                              : SizedBox(),
+                                        ],
+                                      );
+                                  }),
                                 ),
                               ),
                             ]
@@ -728,6 +596,7 @@ class _GameWaitingPageState extends State<GameWaitingPage>
                                     GridView.count(
                                       crossAxisCount: 3,
                                       scrollDirection: Axis.vertical,
+                                      physics: BouncingScrollPhysics(),
                                       children: List<Widget>.generate(
                                               playersJoined.length, (i) {
                                             User p = playersJoined != null &&
@@ -770,8 +639,9 @@ class _GameWaitingPageState extends State<GameWaitingPage>
                                                                     child:
                                                                         CachedNetworkImage(
                                                                       imageUrl: p
-                                                                          .profilePic
-                                                                          .link,
+                                                                              .profilePic
+                                                                              .link ??
+                                                                          defaultProfilePicLink,
                                                                       fit: BoxFit
                                                                           .cover,
                                                                       placeholder:
@@ -869,8 +739,9 @@ class _GameWaitingPageState extends State<GameWaitingPage>
                                                                     child:
                                                                         CachedNetworkImage(
                                                                       imageUrl: p
-                                                                          .profilePic
-                                                                          .link,
+                                                                              .profilePic
+                                                                              .link ??
+                                                                          defaultProfilePicLink,
                                                                       fit: BoxFit
                                                                           .cover,
                                                                       placeholder:
@@ -1111,10 +982,7 @@ class _GameWaitingPageState extends State<GameWaitingPage>
                                                             .value.text.length >
                                                         0) {
                                                       messFocus.unfocus();
-                                                      Firestore.instance
-                                                          .collection(
-                                                              widget.gameId)
-                                                          .add({
+                                                      widget.gameCol.add({
                                                         'type': 'message',
                                                         'sender': me.name,
                                                         'message':
@@ -1162,7 +1030,7 @@ class _GameWaitingPageState extends State<GameWaitingPage>
         if (requests[i]) {
           if (!players.contains(p.number)) {
             players.add(p.number);
-            await Firestore.instance.collection(widget.gameId).add({
+            await widget.gameCol.add({
               'number': p.number,
               'status': "req",
               'type': 'request',
@@ -1183,39 +1051,38 @@ class _GameWaitingPageState extends State<GameWaitingPage>
   }
 
   void startGame() async {
-    widget.reqRef.delete();
-    Random r = new Random();
-    int i;
-    while (playersJoined.length > 0) {
-      if (teamA.length == teamB.length) {
-        i = r.nextInt(playersJoined.length);
-        teamA.add(playersJoined.removeAt(i));
-      } else if (teamA.length > teamB.length) {
-        i = r.nextInt(playersJoined.length);
-        teamB.add(playersJoined.removeAt(i));
-      }
+    if (widget.gameType == GameType.DumbCharades) {
+      widget.reqRef.delete();
+      Random r = new Random();
+      var st = DateTime.now().add(
+        Duration(seconds: 10),
+      );
+      widget.gameCol.add({
+        'type': 'gameStart',
+        'startTime': st.toLocal().toString(),
+      });
+      String denPlayer = playersJoined[r.nextInt(playersJoined.length)].number,
+          movieName = movies[Random().nextInt(movies.length)];
+
+      denRef = await widget.gameCol.add({
+        'type': "den",
+        'player': denPlayer,
+        'movie': movieName,
+      });
+    } else if (widget.gameType == GameType.TruthOrDare) {
+      widget.reqRef.delete();
+      var st = DateTime.now().add(
+        Duration(seconds: 10),
+      );
+      widget.gameCol.add({
+        'type': 'gameStart',
+        'startTime': st.toLocal().toString(),
+      });
+      widget.gameCol.add({
+        'type': 'players',
+        'players': playersJoined.map<String>((e) => e.number).toList(),
+      });
     }
-    var cRef = Firestore.instance.collection(widget.gameId);
-    var pl = teamA.map<String>((e) => e.number).toList();
-    await cRef.add({'type': 'teamA', 'players': pl});
-    pl = teamB.map<String>((e) => e.number).toList();
-    await cRef.add({'type': 'teamB', 'players': pl});
-    var st = DateTime.now().add(
-      Duration(seconds: 15),
-    );
-    String denTeam = "teamA",
-        denPlayer = teamA[r.nextInt(teamA.length)].number,
-        movieName = movies[Random().nextInt(movies.length)];
-    cRef.add({
-      'type': 'gameStart',
-      'startTime': st.toLocal().toString(),
-    });
-    denRef = await cRef.add({
-      'type': "den",
-      'team': denTeam,
-      'player': denPlayer,
-      'movie': movieName,
-    });
   }
 }
 
@@ -1268,47 +1135,60 @@ class _AddPeopleBottomSheetState extends State<AddPeopleBottomSheet> {
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              itemCount: playersToBeShown.length,
-              itemBuilder: (context, i) {
-                var p = playersToBeShown[i];
-                return Container(
-                  height: 50,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    color: Colors.white,
-                  ),
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  margin: EdgeInsets.symmetric(vertical: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        p.name,
-                        style: TextStyle(color: Colors.blue, fontSize: 20),
+            child: playersToBeShown.length == 0
+                ? Center(
+                    child: Text(
+                      "No more players in the room to be added!!",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
                       ),
-                      RaisedButton(
-                        onPressed: () {
-                          setState(() {
-                            requests[i] = !requests[i];
-                          });
-                        },
-                        child: Text(
-                          requests[i] ? "Cancel" : "Request",
-                          style: TextStyle(color: Colors.white, fontSize: 20),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: playersToBeShown.length,
+                    itemBuilder: (context, i) {
+                      var p = playersToBeShown[i];
+                      return Container(
+                        height: 50,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          color: Colors.white,
                         ),
-                        color: requests[i] ? Colors.red : Colors.blue,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            10,
-                          ),
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        margin: EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              p.name,
+                              style:
+                                  TextStyle(color: Colors.blue, fontSize: 20),
+                            ),
+                            RaisedButton(
+                              onPressed: () {
+                                setState(() {
+                                  requests[i] = !requests[i];
+                                });
+                              },
+                              child: Text(
+                                requests[i] ? "Cancel" : "Request",
+                                style: TextStyle(
+                                    color: Colors.white, fontSize: 20),
+                              ),
+                              color: requests[i] ? Colors.red : Colors.blue,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  10,
+                                ),
+                              ),
+                            )
+                          ],
                         ),
-                      )
-                    ],
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
           GestureDetector(
             onTap: sending

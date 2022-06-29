@@ -1,16 +1,20 @@
 import 'dart:async';
-
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:agora_rtc_engine/agora_rtc_engine.dart' as a;
+import 'package:dumbCharades/classes.dart';
+import 'package:dumbCharades/truthOrDareGame.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-class HomePage extends StatefulWidget {
+class DummyPage extends StatefulWidget {
   @override
-  _HomePageState createState() => _HomePageState();
+  _DummyPageState createState() => _DummyPageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _DummyPageState extends State<DummyPage> {
   bool _isInChannel = false;
   final _infoStrings = <String>[];
+  VideoRecording vr;
 
   static final _sessions = List<VideoSession>();
   String dropdownValue = 'Off';
@@ -161,7 +165,9 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _initAgoraRtcEngine() async {
     AgoraRtcEngine.create('c16abbe55c284c0e84adaec9247b1d6b');
+    _addAgoraEventHandlers();
     AgoraRtcEngine.enableVideo();
+    //AgoraRtcEngine.enableLocalVideo(false);
     AgoraRtcEngine.enableAudio();
     // AgoraRtcEngine.setParameters('{\"che.video.lowBitRateStreamParameter\":{\"width\":320,\"height\":180,\"frameRate\":15,\"bitRate\":140}}');
     AgoraRtcEngine.setChannelProfile(ChannelProfile.Communication);
@@ -170,12 +176,13 @@ class _HomePageState extends State<HomePage> {
     AgoraRtcEngine.setVideoEncoderConfiguration(config);
   }
 
+  BottleWidget b = new BottleWidget();
+
   @override
   void initState() {
     super.initState();
-
+    vr = new VideoRecording();
     _initAgoraRtcEngine();
-    _addAgoraEventHandlers();
   }
 
   @override
@@ -195,6 +202,51 @@ class _HomePageState extends State<HomePage> {
                 onPressed: _toggleChannel,
               ),
               Container(height: 100, child: _voiceDropdown()),
+              /* SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    RaisedButton(
+                      onPressed: () async {
+                        var st = await vr.startRecording("10101010");
+                        print("Started  $st");
+                      },
+                      child: Text("Start"),
+                    ),
+                    RaisedButton(
+                      onPressed: () async {
+                        var st = await vr.pauseRecording();
+                        print("Paused  $st");
+                      },
+                      child: Text("Pause"),
+                    ),
+                    RaisedButton(
+                      onPressed: () async {
+                        var st = await vr.stopRecording();
+                        print("Stopped  $st");
+                      },
+                      child: Text("Stop"),
+                    ),
+                    RaisedButton(
+                      onPressed: () async {
+                        OpenFile.open(
+                            "/data/user/0/com.script.scriptGames/app_flutter/recordings/2020-06-01T19:51:14.418589.mp4");
+                      },
+                      child: Text("Open"),
+                    ),
+                    RaisedButton(
+                      onPressed: () async {
+                        vr.changeCamera();
+                      },
+                      child: Text("Switch Camera"),
+                    ),
+                  ],
+                ),
+              ), */
+
+              RaisedButton(
+                onPressed: () {},
+              ),
               Expanded(child: Container(child: _buildInfoList())),
             ],
           ),

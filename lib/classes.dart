@@ -1,7 +1,140 @@
+import 'dart:io';
+
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class VideoRecording {
+  List<CameraDescription> _cameras;
+  CameraController _controller;
+  String _dirPath, currentVideoPath;
+  CameraDescription _currentCamera;
+
+  Future<void> getFilePath() async {
+    final Directory extDir = await getApplicationDocumentsDirectory();
+    _dirPath = '${extDir.path}/recordings/';
+    await Directory(_dirPath).create(recursive: true);
+  }
+
+  VideoRecording() {
+    initialise();
+    getFilePath();
+  }
+
+  void initialise() async {
+    _cameras = await availableCameras();
+    if (_cameras.any((c) => c.lensDirection == CameraLensDirection.front)) {
+      _currentCamera = _cameras
+          .firstWhere((c) => c.lensDirection == CameraLensDirection.front);
+    } else if (_cameras
+        .any((c) => c.lensDirection == CameraLensDirection.back)) {
+      _currentCamera = _cameras
+          .firstWhere((c) => c.lensDirection == CameraLensDirection.back);
+    }
+    if (_currentCamera != null) {
+      _controller = CameraController(_currentCamera, ResolutionPreset.high);
+      _controller.initialize().catchError((e) {
+        print("Error  $e");
+      });
+    }
+  }
+
+  void changeCamera() {
+    if (_currentCamera != null) {
+      if (_currentCamera.lensDirection == CameraLensDirection.front) {
+        if (_cameras.any((c) => c.lensDirection == CameraLensDirection.back)) {
+          _currentCamera = _cameras
+              .firstWhere((c) => c.lensDirection == CameraLensDirection.back);
+        }
+      } else if (_currentCamera.lensDirection == CameraLensDirection.back) {
+        if (_cameras.any((c) => c.lensDirection == CameraLensDirection.front)) {
+          _currentCamera = _cameras
+              .firstWhere((c) => c.lensDirection == CameraLensDirection.front);
+        }
+      }
+    }
+    print(_controller);
+  }
+
+  bool get isRecording => _controller.value.isRecordingVideo;
+
+  bool get ispaused => _controller.value.isRecordingPaused;
+
+  Future<bool> startRecording(String gameId) async {
+    if (_dirPath == null) await getFilePath();
+    print(_controller);
+    if (_controller != null && !isRecording) {
+      currentVideoPath = _dirPath + "$gameId.mp4";
+      bool error = false;
+      await _controller
+          .startVideoRecording(currentVideoPath)
+          .catchError((e) async {
+        error = true;
+        print("error $e");
+        if (e.code == "fileExists") {
+          await File(currentVideoPath).delete();
+          //startRecording(gameId);
+        } else if (e.code == "Uninitialized CameraController") {
+          await _controller.initialize();
+        }
+      });
+      if (!error) print("Recording Started");
+      return !error;
+    }
+    return false;
+  }
+
+  Future<bool> pauseRecording() async {
+    if (_controller != null && isRecording) {
+      bool error = false;
+      await _controller.pauseVideoRecording().catchError((e) {
+        error = true;
+      });
+      if (!error) print("Recording Paused");
+      return !error;
+    }
+    return false;
+  }
+
+  Future<bool> resumeRecording() async {
+    if (_controller != null && isRecording) {
+      bool error = false;
+      await _controller.resumeVideoRecording().catchError((e) {
+        error = true;
+      });
+      if (!error) print("Recording Resumed");
+      return !error;
+    }
+    return false;
+  }
+
+  Future<bool> stopRecording() async {
+    if (_controller != null && isRecording) {
+      bool error = false;
+      await _controller.stopVideoRecording().catchError((e) {
+        error = true;
+      });
+      if (!error) {
+        saveRecording();
+      }
+      if (!error) print("Recording Stopped");
+      return !error;
+    }
+    return false;
+  }
+
+  void saveRecording() async {
+    SharedPreferences pref = await SharedPreferences.getInstance();
+    List<String> videos = pref.getStringList("recordedVideos") ?? [];
+    videos.add(currentVideoPath);
+    pref.setStringList("recordedVideos", videos);
+    print("Recording Saved");
+  }
+}
 
 class User {
   String name, number;
@@ -25,14 +158,17 @@ class ProfilePicData {
 class Room {
   String id, adminName, adminNumber, name;
   List<String> players;
+  DocumentReference ref;
+  DocumentReference gamesRef;
   Room(
       {@required this.adminName,
       @required this.adminNumber,
       @required this.id,
       @required this.players,
-      @required this.name});
+      @required this.name,
+      @required this.ref});
 
-  Room.fromMap(Map<String, dynamic> d) {
+  Room.fromMap(Map<String, dynamic> d, this.ref) {
     this.adminName = d['adminName'];
     this.adminNumber = d['adminNumber'];
     this.name = d['name'];
@@ -66,7 +202,7 @@ class Message {
 }
 
 class DenData {
-  String team, player, movie;
+  String player, movie;
 }
 
 class VideoScreen {
@@ -153,8 +289,8 @@ Widget logo(Size size) {
 List<String> movies = [
   "Andaz Apna Apna",
   "Golmaal",
-  "Bade Miyan Chote Miyan"
-      "Hera Pheri",
+  "Bade Miyan Chote Miyan",
+  "Hera Pheri",
   "De Dana Dan",
   "Singh is King",
   "Main Hoon Na",
@@ -253,6 +389,9 @@ List<String> movies = [
   "Main Tera Hero",
 ];
 
+String defaultProfilePicLink =
+    "https://firebasestorage.googleapis.com/v0/b/dumb-charades-a1d05.appspot.com/o/buggsBunny.png?alt=media&token=85b03b9e-e7b1-468b-a15b-0ab86a1a9ea4";
+
 class DrawTriangle extends CustomPainter {
   Paint _paint;
   List<Color> colors;
@@ -296,3 +435,123 @@ class DrawTriangle extends CustomPainter {
     return true;
   }
 }
+
+//Dumb Charades Game, TeamA, TeamB, video Screens....
+/*Positioned(
+                          left: 5,
+                          height: MediaQuery.of(context).size.height * 0.625,
+                          width: MediaQuery.of(context).size.width * 0.2,
+                          child: Container(
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: teamAVideoScreens.length + 1,
+                              itemBuilder: (context, i) {
+                                if (i == 0)
+                                  return Container(
+                                    padding: EdgeInsets.symmetric(vertical: 5),
+                                    child: Text(
+                                      "TEAM A",
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  );
+                                else {
+                                  var pl = teamAVideoScreens[i - 1];
+                                  var screen = pl.screen;
+                                  if (pl.player.number == den.player)
+                                    return Container();
+                                  return Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      LayoutBuilder(
+                                        builder: (context, cons) {
+                                          double width =
+                                              cons.biggest.width - 20;
+                                          return Container(
+                                            height: width,
+                                            width: width,
+                                            margin: EdgeInsets.symmetric(
+                                                vertical: 10, horizontal: 10),
+                                            child: screen,
+                                          );
+                                        },
+                                      ),
+                                      Container(
+                                        margin:
+                                            EdgeInsets.symmetric(vertical: 5),
+                                        child: Text(
+                                          pl.player.name,
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 5,
+                          height: MediaQuery.of(context).size.height * 0.625,
+                          width: MediaQuery.of(context).size.width * 0.2,
+                          child: Container(
+                            child: ListView.builder(
+                              itemCount: teamBVideoScreens.length + 1,
+                              itemBuilder: (context, i) {
+                                if (i == 0)
+                                  return Container(
+                                    padding: EdgeInsets.symmetric(vertical: 5),
+                                    child: Text(
+                                      "TEAM B",
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  );
+                                else {
+                                  var pl = teamBVideoScreens[i - 1];
+                                  var screen = pl.screen;
+                                  if (pl.player.number == den.player)
+                                    return Container();
+                                  return Column(
+                                    children: [
+                                      LayoutBuilder(builder: (context, cons) {
+                                        double width = cons.biggest.width - 20;
+                                        return Container(
+                                          height: width,
+                                          width: width,
+                                          margin: EdgeInsets.symmetric(
+                                              vertical: 10, horizontal: 10),
+                                          child: screen,
+                                        );
+                                      }),
+                                      Container(
+                                        margin:
+                                            EdgeInsets.symmetric(vertical: 5),
+                                        child: Text(
+                                          pl.player.name,
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                       */

@@ -1,9 +1,7 @@
-import 'package:dumbCharades/dumbCharadesGame.dart';
-import 'package:dumbCharades/home.dart';
-import 'package:dumbCharades/homepage.dart' as h;
-import 'package:dumbCharades/ludoGame.dart';
-import 'package:dumbCharades/signuppage.dart';
+import 'package:dumbCharades/dummy.dart';
 import 'package:flutter/material.dart';
+import 'package:dumbCharades/home.dart';
+import 'package:dumbCharades/signuppage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -15,12 +13,6 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      routes: {
-        'homepage': (context) => HomePage(),
-        'signUp': (context) => SignUpPage(),
-        'ludogame': (context) => LudoGame(),
-      },
-      //initialRoute: 'ludogame',
       home: SplashScreenPage(),
     );
   }

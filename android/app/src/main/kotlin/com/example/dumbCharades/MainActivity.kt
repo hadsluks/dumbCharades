@@ -1,4 +1,4 @@
-package com.script.dumbCharades
+package com.script.scriptGames
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dumbCharades/classes.dart';
@@ -8,7 +9,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -29,7 +29,10 @@ class _SignUpPageState extends State<SignUpPage> {
   ProfilePicData selectedProfilePic;
   bool hideBottomNavigation = false;
   bool signUp = true;
-  bool isProfileLocal = false;
+  bool isProfileLocal = false, numberVerified = false, waitngForOTP = false;
+  int seconds;
+  Timer otpTimer;
+  bool obscurePass = true;
 
   @override
   void initState() {
@@ -41,6 +44,62 @@ class _SignUpPageState extends State<SignUpPage> {
     nameF = new FocusNode();
     numberF = new FocusNode();
     passF = new FocusNode();
+  }
+
+  void sendOTP() {
+    setState(() {
+      waitngForOTP = true;
+    });
+    FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: "+91$number",
+        timeout: Duration(seconds: 30),
+        verificationCompleted: (cred) {
+          FirebaseAuth.instance.signInWithCredential(cred);
+          toast("Number Verified");
+          if (otpTimer != null) otpTimer.cancel();
+          if (signUp) {
+            submit();
+            setState(() {
+              waitngForOTP = false;
+              numberVerified = true;
+            });
+          } else {
+            Navigator.of(context).pop();
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (context) => HomePage(),
+            ));
+          }
+        },
+        verificationFailed: (exec) {
+          toast("An Error Occured");
+          if (otpTimer != null) otpTimer.cancel();
+          setState(() {
+            waitngForOTP = false;
+            numberVerified = false;
+          });
+        },
+        codeSent: (verfId, [code]) {
+          setState(() {
+            waitngForOTP = true;
+          });
+        },
+        codeAutoRetrievalTimeout: (verfId) {
+          if (otpTimer != null) otpTimer.cancel();
+          toast("Failed to Auto-Retrieve the OTP!");
+          setState(() {
+            waitngForOTP = false;
+            numberVerified = false;
+          });
+        });
+    seconds = 30;
+    otpTimer = new Timer.periodic(Duration(seconds: 1), (t) {
+      if (seconds > 0 && this.mounted)
+        setState(() {
+          seconds -= 1;
+        });
+      else
+        otpTimer.cancel();
+    });
   }
 
   void toast(String message) {
@@ -228,452 +287,635 @@ class _SignUpPageState extends State<SignUpPage> {
   }
 
   @override
+  void dispose() {
+    if (otpTimer != null) otpTimer.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     var size = MediaQuery.of(context).size;
     return Scaffold(
       key: scaffoldKey,
       backgroundColor: Colors.white,
       body: Form(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(
-              height: 100,
-            ),
-            logo(size),
-            SizedBox(
-              height: 20,
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  signUp ? "SIGN UP" : "LOG IN",
-                  style: TextStyle(
-                    fontSize: 25,
-                    fontWeight: FontWeight.bold,
-                    foreground: Paint()
-                      ..shader = LinearGradient(
-                        colors: [
-                          Color(0xffeec32d),
-                          Color(0xfff6322a),
-                        ],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ).createShader(
-                        Rect.fromLTWH(0.0, 0.0, 50.0, 70.0),
-                      ),
-                  ),
-                )
-              ],
-            ),
-            SizedBox(height: 15),
-            submitted
-                ? Column(
-                    children: [
-                      GestureDetector(
-                        onTap: selectProfilePic,
-                        child: Opacity(
-                          opacity: 1,
-                          child: selectedProfilePic != null
-                              ? Container(
-                                  height: 200,
-                                  width: 200,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: RadialGradient(
-                                      colors: [
-                                        Color(0xfffec183),
-                                        Color(0xffff1572),
-                                      ],
+        child: SingleChildScrollView(
+          physics: BouncingScrollPhysics(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                height: 100,
+              ),
+              logo(size),
+              SizedBox(
+                height: 20,
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    signUp ? "SIGN UP" : "LOG IN",
+                    style: TextStyle(
+                      fontSize: 25,
+                      fontWeight: FontWeight.bold,
+                      foreground: Paint()
+                        ..shader = LinearGradient(
+                          colors: [
+                            Color(0xffeec32d),
+                            Color(0xfff6322a),
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ).createShader(
+                          Rect.fromLTWH(0.0, 0.0, 50.0, 70.0),
+                        ),
+                    ),
+                  )
+                ],
+              ),
+              SizedBox(height: 15),
+              submitted
+                  ? !numberVerified
+                      ? Column(
+                          children: [
+                            waitngForOTP
+                                ? SizedBox()
+                                : Text(
+                                    "A One Time Password will be sent to:",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      foreground: Paint()
+                                        ..shader = LinearGradient(
+                                          colors: [
+                                            Color(0xffeec32d),
+                                            Color(0xfff6322a),
+                                          ],
+                                          begin: Alignment.centerLeft,
+                                          end: Alignment.centerRight,
+                                        ).createShader(
+                                          Rect.fromLTWH(0.0, 0.0, 50.0, 70.0),
+                                        ),
                                     ),
+                                  ),
+                            SizedBox(height: 10),
+                            waitngForOTP
+                                ? SizedBox()
+                                : Text(
+                                    "+91 $number",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      foreground: Paint()
+                                        ..shader = LinearGradient(
+                                          colors: [
+                                            Color(0xffeec32d),
+                                            Color(0xfff6322a),
+                                          ],
+                                          begin: Alignment.centerLeft,
+                                          end: Alignment.centerRight,
+                                        ).createShader(
+                                          Rect.fromLTWH(0.0, 0.0, 50.0, 70.0),
+                                        ),
+                                    ),
+                                  ),
+                            SizedBox(height: 20),
+                            waitngForOTP
+                                ? Column(
+                                    children: [
+                                      Text(
+                                        "Code will be auto retrieved in:",
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          foreground: Paint()
+                                            ..shader = LinearGradient(
+                                              colors: [
+                                                Color(0xffeec32d),
+                                                Color(0xfff6322a),
+                                              ],
+                                              begin: Alignment.centerLeft,
+                                              end: Alignment.centerRight,
+                                            ).createShader(
+                                              Rect.fromLTWH(
+                                                  0.0, 0.0, 50.0, 70.0),
+                                            ),
+                                        ),
+                                      ),
+                                      Text(
+                                        (seconds != null
+                                                ? seconds.toString()
+                                                : "30") +
+                                            " seconds",
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          foreground: Paint()
+                                            ..shader = LinearGradient(
+                                              colors: [
+                                                Color(0xffeec32d),
+                                                Color(0xfff6322a),
+                                              ],
+                                              begin: Alignment.centerLeft,
+                                              end: Alignment.centerRight,
+                                            ).createShader(
+                                              Rect.fromLTWH(
+                                                  0.0, 0.0, 50.0, 70.0),
+                                            ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : GestureDetector(
+                                    onTap: sendOTP,
+                                    child: Container(
+                                      width: size.width - 200,
+                                      height: 45,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Color(0xfffd3e40),
+                                            Color(0xff960e7a),
+                                          ],
+                                          begin: Alignment.centerLeft,
+                                          end: Alignment.centerRight,
+                                        ),
+                                        borderRadius: BorderRadius.circular(32),
+                                      ),
+                                      padding: EdgeInsets.all(2),
+                                      child: Container(
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(32),
+                                        ),
+                                        child: Text(
+                                          seconds != null ? "Resend" : "Send",
+                                          style: TextStyle(
+                                            fontSize: 25,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                          ],
+                        )
+                      : Column(
+                          children: [
+                            GestureDetector(
+                              onTap: selectProfilePic,
+                              child: Opacity(
+                                opacity: 1,
+                                child: selectedProfilePic != null
+                                    ? Container(
+                                        height: 200,
+                                        width: 200,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          gradient: RadialGradient(
+                                            colors: [
+                                              Color(0xfffec183),
+                                              Color(0xffff1572),
+                                            ],
+                                          ),
+                                        ),
+                                        padding: EdgeInsets.all(2),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.white,
+                                          ),
+                                          padding: EdgeInsets.all(15),
+                                          child: ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(100),
+                                            child: isProfileLocal
+                                                ? Image.file(
+                                                    new File(
+                                                      selectedProfilePic.link,
+                                                    ),
+                                                    fit: BoxFit.cover,
+                                                  )
+                                                : CachedNetworkImage(
+                                                    imageUrl:
+                                                        selectedProfilePic.link,
+                                                    fit: BoxFit.contain,
+                                                    placeholder: (context, s) =>
+                                                        Container(
+                                                      color: Colors.white,
+                                                      child: Center(
+                                                        child:
+                                                            CircularProgressIndicator(),
+                                                      ),
+                                                    ),
+                                                  ),
+                                          ),
+                                        ),
+                                      )
+                                    : Container(
+                                        height: 200,
+                                        width: 200,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(),
+                                          gradient: RadialGradient(
+                                            colors: [
+                                              Color(0xfffec183),
+                                              Color(0xffff1572),
+                                            ],
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            "Select Profile Pic",
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            SizedBox(
+                              height: 10,
+                            ),
+                            FlatButton(
+                              onPressed: () async {
+                                if (selectedProfilePic != null) {
+                                  await uploadProfile();
+                                  Navigator.of(context).pop();
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) => HomePage(),
+                                    ),
+                                  );
+                                } else {
+                                  toast("Select a Profile Pic!");
+                                }
+                              },
+                              child: Container(
+                                width: size.width - 200,
+                                height: 45,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Color(0xfffd3e40),
+                                      Color(0xff960e7a),
+                                    ],
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(32),
+                                ),
+                                padding: EdgeInsets.all(2),
+                                child: Container(
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(32),
+                                  ),
+                                  child: Text(
+                                    "Next",
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                  : Column(
+                      children: [
+                        signUp
+                            ? Container(
+                                width: size.width - 100,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Color(0xfffd3e40),
+                                      Color(0xff960e7a),
+                                    ],
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(32),
+                                ),
+                                padding: EdgeInsets.all(2),
+                                child: Container(
+                                  padding: EdgeInsets.only(left: 10, top: 5),
+                                  alignment: Alignment.centerLeft,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    border: Border.all(color: Colors.white),
+                                    borderRadius: BorderRadius.circular(32),
+                                  ),
+                                  child: TextField(
+                                    decoration: InputDecoration(
+                                      border: InputBorder.none,
+                                      disabledBorder: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      errorBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      focusedErrorBorder: InputBorder.none,
+                                      isDense: true,
+                                      hintText: "Enter you Name",
+                                      hintStyle: TextStyle(
+                                          color: Colors.grey.withOpacity(0.5)),
+                                      //labelText: "Name",
+                                      labelStyle:
+                                          TextStyle(color: Color(0xfffd3e40)),
+                                    ),
+                                    keyboardType: TextInputType.text,
+                                    focusNode: nameF,
+                                    onChanged: (s) {
+                                      name = s;
+                                    },
+                                    onSubmitted: (s) {
+                                      if (name.length == 0) {
+                                        nameF.requestFocus();
+                                        toast("Add Your Name");
+                                      } else {
+                                        numberF.requestFocus();
+                                      }
+                                    },
+                                  ),
+                                ),
+                              )
+                            : SizedBox(),
+                        SizedBox(
+                          height: 8,
+                        ),
+                        Container(
+                          width: size.width - 100,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Color(0xfffd3e40),
+                                Color(0xff960e7a),
+                              ],
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                            ),
+                            borderRadius: BorderRadius.circular(32),
+                          ),
+                          padding: EdgeInsets.all(2),
+                          child: Container(
+                            padding: EdgeInsets.only(left: 10, top: 5),
+                            alignment: Alignment.centerLeft,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: Colors.white),
+                              borderRadius: BorderRadius.circular(32),
+                            ),
+                            child: TextField(
+                              decoration: InputDecoration(
+                                counterText: "",
+                                counterStyle: TextStyle(fontSize: 0.1),
+                                border: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                errorBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                focusedErrorBorder: InputBorder.none,
+                                isDense: true,
+                                hintText: "Enter your mobile number",
+                                hintStyle: TextStyle(
+                                    color: Colors.grey.withOpacity(0.5)),
+                                //labelText: "Mobile No.",
+                                labelStyle: TextStyle(color: Color(0xfffd3e40)),
+                              ),
+                              keyboardType: TextInputType.number,
+                              focusNode: numberF,
+                              maxLength: 10,
+                              maxLengthEnforced: true,
+                              onChanged: (s) {
+                                number = s;
+                              },
+                              onSubmitted: (s) {
+                                if (number.length < 10) {
+                                  numberF.requestFocus();
+                                  toast("Mobile Number Invalid");
+                                } else {
+                                  passF.requestFocus();
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          height: 8,
+                        ),
+                        Container(
+                          padding: EdgeInsets.only(left: 50),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Color(0xfffd3e40),
+                                        Color(0xff960e7a),
+                                      ],
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(32),
                                   ),
                                   padding: EdgeInsets.all(2),
                                   child: Container(
+                                    padding: EdgeInsets.only(left: 10, top: 5),
+                                    alignment: Alignment.centerLeft,
                                     decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
                                       color: Colors.white,
+                                      border: Border.all(color: Colors.white),
+                                      borderRadius: BorderRadius.circular(32),
                                     ),
-                                    padding: EdgeInsets.all(15),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(100),
-                                      child: isProfileLocal
-                                          ? Image.file(
-                                              new File(
-                                                selectedProfilePic.link,
-                                              ),
-                                              fit: BoxFit.cover,
-                                            )
-                                          : CachedNetworkImage(
-                                              imageUrl: selectedProfilePic.link,
-                                              fit: BoxFit.contain,
-                                              placeholder: (context, s) =>
-                                                  Container(
-                                                color: Colors.white,
-                                                child: Center(
-                                                  child:
-                                                      CircularProgressIndicator(),
-                                                ),
-                                              ),
-                                            ),
-                                    ),
-                                  ),
-                                )
-                              : Container(
-                                  height: 200,
-                                  width: 200,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(),
-                                    gradient: RadialGradient(
-                                      colors: [
-                                        Color(0xfffec183),
-                                        Color(0xffff1572),
-                                      ],
-                                    ),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      "Select Profile Pic",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
+                                    child: TextField(
+                                      decoration: InputDecoration(
+                                        border: InputBorder.none,
+                                        disabledBorder: InputBorder.none,
+                                        enabledBorder: InputBorder.none,
+                                        errorBorder: InputBorder.none,
+                                        focusedBorder: InputBorder.none,
+                                        focusedErrorBorder: InputBorder.none,
+                                        isDense: true,
+                                        hintText: "Enter a strong password...",
+                                        hintStyle: TextStyle(
+                                          color: Colors.grey.withOpacity(0.5),
+                                          fontSize: 15,
+                                        ),
+                                        //labelText: "Password",
+                                        labelStyle:
+                                            TextStyle(color: Color(0xfffd3e40)),
                                       ),
+                                      keyboardType: TextInputType.text,
+                                      focusNode: passF,
+                                      obscureText: obscurePass,
+                                      onChanged: (s) {
+                                        password = s;
+                                      },
+                                      onSubmitted: (s) {
+                                        if (password.length == 0) {
+                                          passF.requestFocus();
+                                          toast("Please Add Password");
+                                        } else {
+                                          passF.unfocus();
+                                        }
+                                      },
                                     ),
                                   ),
                                 ),
-                        ),
-                      ),
-                      SizedBox(
-                        height: 10,
-                      ),
-                      FlatButton(
-                        onPressed: () async {
-                          await uploadProfile();
-                          Navigator.of(context).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => HomePage(),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          width: size.width - 200,
-                          height: 45,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Color(0xfffd3e40),
-                                Color(0xff960e7a),
-                              ],
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ),
-                            borderRadius: BorderRadius.circular(32),
-                          ),
-                          padding: EdgeInsets.all(2),
-                          child: Container(
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(32),
-                            ),
-                            child: Text(
-                              selectedProfilePic == null ? "Skip" : "Next",
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
                               ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : Column(
-                    children: [
-                      signUp
-                          ? Container(
-                              width: size.width - 100,
-                              height: 35,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Color(0xfffd3e40),
-                                    Color(0xff960e7a),
-                                  ],
-                                  begin: Alignment.centerLeft,
-                                  end: Alignment.centerRight,
+                              IconButton(
+                                icon: Icon(
+                                  Icons.remove_red_eye,
+                                  color:
+                                      obscurePass ? Colors.blue : Colors.grey,
                                 ),
-                                borderRadius: BorderRadius.circular(32),
+                                onPressed: () {
+                                  setState(() {
+                                    obscurePass = !obscurePass;
+                                  });
+                                },
                               ),
-                              padding: EdgeInsets.all(2),
-                              child: Container(
-                                padding: EdgeInsets.only(left: 10, top: 5),
-                                alignment: Alignment.centerLeft,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  border: Border.all(color: Colors.white),
-                                  borderRadius: BorderRadius.circular(32),
-                                ),
-                                child: TextField(
-                                  decoration: InputDecoration(
-                                    border: InputBorder.none,
-                                    disabledBorder: InputBorder.none,
-                                    enabledBorder: InputBorder.none,
-                                    errorBorder: InputBorder.none,
-                                    focusedBorder: InputBorder.none,
-                                    focusedErrorBorder: InputBorder.none,
-                                    hintText: "Name",
-                                    hintStyle: TextStyle(
-                                        color: Colors.grey.withOpacity(0.5)),
-                                  ),
-                                  keyboardType: TextInputType.text,
-                                  focusNode: nameF,
-                                  onChanged: (s) {
-                                    name = s;
-                                  },
-                                  onSubmitted: (s) {
-                                    if (name.length == 0) {
-                                      nameF.requestFocus();
-                                      toast("Add Your Name");
-                                    } else {
-                                      numberF.requestFocus();
-                                    }
-                                  },
-                                ),
-                              ),
-                            )
-                          : SizedBox(),
-                      SizedBox(
-                        height: 8,
-                      ),
-                      Container(
-                        width: size.width - 100,
-                        height: 35,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Color(0xfffd3e40),
-                              Color(0xff960e7a),
                             ],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          ),
-                          borderRadius: BorderRadius.circular(32),
-                        ),
-                        padding: EdgeInsets.all(2),
-                        child: Container(
-                          padding: EdgeInsets.only(left: 10, top: 5),
-                          alignment: Alignment.centerLeft,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: Colors.white),
-                            borderRadius: BorderRadius.circular(32),
-                          ),
-                          child: TextField(
-                            decoration: InputDecoration(
-                              counterText: "",
-                              counterStyle: TextStyle(fontSize: 0.1),
-                              border: InputBorder.none,
-                              disabledBorder: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              errorBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              focusedErrorBorder: InputBorder.none,
-                              hintText: "Mobile No.",
-                              hintStyle: TextStyle(
-                                  color: Colors.grey.withOpacity(0.5)),
-                            ),
-                            keyboardType: TextInputType.number,
-                            focusNode: numberF,
-                            maxLength: 10,
-                            maxLengthEnforced: true,
-                            onChanged: (s) {
-                              number = s;
-                            },
-                            onSubmitted: (s) {
-                              if (number.length < 10) {
-                                numberF.requestFocus();
-                                toast("Mobile Number Invalid");
-                              } else {
-                                passF.requestFocus();
-                              }
-                            },
                           ),
                         ),
-                      ),
-                      SizedBox(
-                        height: 8,
-                      ),
-                      Container(
-                        width: size.width - 100,
-                        height: 35,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Color(0xfffd3e40),
-                              Color(0xff960e7a),
-                            ],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          ),
-                          borderRadius: BorderRadius.circular(32),
+                        SizedBox(
+                          height: 10,
                         ),
-                        padding: EdgeInsets.all(2),
-                        child: Container(
-                          padding: EdgeInsets.only(left: 10, top: 5),
-                          alignment: Alignment.centerLeft,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: Colors.white),
-                            borderRadius: BorderRadius.circular(32),
-                          ),
-                          child: TextField(
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              disabledBorder: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              errorBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              focusedErrorBorder: InputBorder.none,
-                              hintText: "Password",
-                              hintStyle: TextStyle(
-                                  color: Colors.grey.withOpacity(0.5)),
-                            ),
-                            keyboardType: TextInputType.text,
-                            focusNode: passF,
-                            obscureText: true,
-                            onChanged: (s) {
-                              password = s;
-                            },
-                            onSubmitted: (s) {
-                              if (password.length == 0) {
-                                passF.requestFocus();
-                                toast("Please Add Password");
-                              } else {
-                                passF.unfocus();
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        height: 10,
-                      ),
-                      FlatButton(
-                        onPressed: () async {
-                          if (name.length == 0 && signUp) {
-                            nameF.requestFocus();
-                            toast("Add Your Name");
-                          } else if (number.length < 10) {
-                            numberF.requestFocus();
-                            toast("Mobile Number Invalid");
-                          } else if (password.length == 0) {
-                            passF.requestFocus();
-                            toast("Please Add Password");
-                          } else {
-                            loadingDialog();
-                            if (signUp && await checkMobileNumberExist()) {
-                              Navigator.of(context).pop();
+                        FlatButton(
+                          onPressed: () async {
+                            if (name.length == 0 && signUp) {
+                              nameF.requestFocus();
+                              toast("Add Your Name");
+                            } else if (number.length < 10) {
                               numberF.requestFocus();
-                              toast("Mobile Number Already Existts...");
+                              toast("Mobile Number Invalid");
+                            } else if (password.length == 0) {
+                              passF.requestFocus();
+                              toast("Please Add Password");
                             } else {
-                              bool subm = await submit();
-                              if (subm) {
+                              loadingDialog();
+                              if (signUp && await checkMobileNumberExist()) {
                                 Navigator.of(context).pop();
-                                if (signUp) {
+                                numberF.requestFocus();
+                                toast("Mobile Number Already Existts...");
+                              } else {
+                                if (!signUp) {
+                                  bool subm = await submit();
+                                  if (subm) {
+                                    Navigator.of(context).pop();
+                                    setState(() {
+                                      this.submitted = true;
+                                    });
+                                  } else {
+                                    Navigator.of(context).pop();
+                                  }
+                                } else {
+                                  Navigator.of(context).pop();
+                                  sendOTP();
                                   setState(() {
                                     this.submitted = true;
                                   });
-                                } else {
-                                  Navigator.of(context).pushAndRemoveUntil(
-                                      MaterialPageRoute(
-                                        builder: (context) => HomePage(),
-                                      ),
-                                      (route) => true);
                                 }
-                              } else {
-                                Navigator.of(context).pop();
                               }
                             }
-                          }
-                        },
-                        child: Container(
-                          width: size.width - 200,
-                          height: 45,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Color(0xfffd3e40),
-                                Color(0xff960e7a),
-                              ],
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ),
-                            borderRadius: BorderRadius.circular(32),
-                          ),
-                          padding: EdgeInsets.all(2),
+                          },
                           child: Container(
-                            alignment: Alignment.center,
+                            width: size.width - 200,
+                            height: 45,
                             decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color(0xfffd3e40),
+                                  Color(0xff960e7a),
+                                ],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
                               borderRadius: BorderRadius.circular(32),
                             ),
-                            child: Text(
-                              "Submit",
-                              style: TextStyle(
-                                fontSize: 25,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                            padding: EdgeInsets.all(2),
+                            child: Container(
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(32),
                               ),
-                              textAlign: TextAlign.center,
+                              child: Text(
+                                "Submit",
+                                style: TextStyle(
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-            SizedBox(height: 20),
-            Container(
-              width: size.width - 100,
-              child: Row(
-                children: [
-                  Expanded(child: Divider(thickness: 1)),
-                  Text(!signUp ? "New Here..?" : "Already have an account?"),
-                  Expanded(child: Divider(thickness: 1)),
-                ],
-              ),
-            ),
-            SizedBox(height: 5),
-            Container(
-              width: size.width - 100,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  RichText(
-                    text: TextSpan(
-                      text: !signUp ? "SIGN UP" : "LOG IN",
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.blue,
-                        fontWeight: FontWeight.bold,
-                        decoration: TextDecoration.underline,
-                      ),
-                      recognizer: TapGestureRecognizer()
-                        ..onTap = () {
-                          setState(() {
-                            signUp = !signUp;
-                          });
-                        },
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            )
-          ],
+              SizedBox(height: 20),
+              submitted
+                  ? SizedBox()
+                  : Container(
+                      width: size.width - 100,
+                      child: Row(
+                        children: [
+                          Expanded(child: Divider(thickness: 1)),
+                          Text(!signUp
+                              ? "New Here..?"
+                              : "Already have an account?"),
+                          Expanded(child: Divider(thickness: 1)),
+                        ],
+                      ),
+                    ),
+              SizedBox(height: 5),
+              submitted
+                  ? SizedBox()
+                  : Container(
+                      width: size.width - 100,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          RichText(
+                            text: TextSpan(
+                              text: !signUp ? "SIGN UP" : "LOG IN",
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: Colors.blue,
+                                fontWeight: FontWeight.bold,
+                                decoration: TextDecoration.underline,
+                              ),
+                              recognizer: TapGestureRecognizer()
+                                ..onTap = () {
+                                  setState(() {
+                                    signUp = !signUp;
+                                  });
+                                },
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: hideBottomNavigation
@@ -746,7 +988,6 @@ class _SignUpPageState extends State<SignUpPage> {
   }
 
   Future<bool> submit() async {
-    await FirebaseAuth.instance.signInAnonymously();
     SharedPreferences preferences = await SharedPreferences.getInstance();
     if (signUp) {
       userRef = Firestore.instance.collection('users').document();
@@ -775,6 +1016,7 @@ class _SignUpPageState extends State<SignUpPage> {
           await preferences.setString("profilePic", id);
           await preferences.setString("name", name);
           await preferences.setString("number", number);
+          sendOTP();
           return true;
         } else {
           toast("Password Incorrect!!!");
